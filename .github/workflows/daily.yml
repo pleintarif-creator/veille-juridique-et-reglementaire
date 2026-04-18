@@ -1,0 +1,52 @@
+name: Veille juridique quotidienne
+
+on:
+  schedule:
+    # Tous les jours à 07:00 UTC (09:00 heure de Paris en été, 08:00 en hiver).
+    - cron: "0 7 * * *"
+  workflow_dispatch: {}  # permet de lancer manuellement
+
+permissions:
+  contents: write   # pour committer state.json après envoi
+
+jobs:
+  veille:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run veille
+        env:
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+          EMAIL_TO: ${{ secrets.EMAIL_TO }}
+        run: python main.py
+
+      - name: Commit state
+        if: always()
+        run: |
+          if [ -n "$(git status --porcelain state.json)" ]; then
+            git config user.name "veille-bot"
+            git config user.email "veille-bot@users.noreply.github.com"
+            git add state.json
+            git commit -m "chore: maj état veille $(date -u +'%Y-%m-%d')"
+            git push
+          else
+            echo "Aucun changement d'état à committer."
+          fi
